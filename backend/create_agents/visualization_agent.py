@@ -19,10 +19,24 @@ class MapboxVisualizationAgent(BaseAgent):
         super().__init__(agent_id, AgentType.MAPBOX_AGENT, task, config)
     
     def build_prompt(self) -> str:
+        import random
+        import datetime
+        
         city = self.custom_input.get("city", "San Francisco, CA")
         policy_goal = self.custom_input.get("policy_goal", "")
         
+        # Generate unique seed for this run to ensure different visualizations
+        run_seed = random.randint(1000, 9999)
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         return f"""You are a Mapbox Visualization Agent. Your ONLY job is to create interactive map overlays.
+
+# UNIQUE RUN ID: {run_seed} (Generated at {timestamp})
+⚠️ CRITICAL: This run must be COMPLETELY UNIQUE from previous runs. Vary:
+- Which specific streets are blocked
+- Number and location of impact zones  
+- Heatmap point positions and intensities
+- Alternate route suggestions
 
 # YOUR MISSION
 Read the complete policy analysis and report, then generate SPECIFIC, DETAILED map visualization data.
@@ -141,35 +155,57 @@ Use ACTUAL street coordinates:
 
 ## OUTPUT FORMAT - PURE JSON ONLY
 
-Output ONLY a single JSON object (no markdown, no explanation, just JSON):
+⚠️ MANDATORY: Start your response with exactly: MAPBOX_JSON_START
+Then output the JSON
+Then end with exactly: MAPBOX_JSON_END
 
-```json
+Format:
+MAPBOX_JSON_START
 {{
   "city": "{city}",
   "policy": "{policy_goal}",
+  "run_id": "UNIQUE_ID_HERE",
   "blocked_roads": [
-    // 3-8 roads with coordinates
+    {{
+      "name": "Exact street name",
+      "coordinates": [[-122.xxx, 37.xxx], [-122.xxx, 37.xxx]],
+      "reason": "Why blocked",
+      "impact": {{"delay": "+X min", "traffic_increase_on_alternates": "XX%"}},
+      "severity": "high/medium/low"
+    }}
   ],
   "impact_zones": [
-    // 3-6 zones with centers and radii
+    {{
+      "center": {{"lng": -122.xxx, "lat": 37.xxx}},
+      "radius": 0.010,
+      "severity": "high/medium/low",
+      "description": "What this zone represents"
+    }}
   ],
   "traffic_heatmap": [
-    // 15-25 points with lat/lng/intensity
+    {{"lat": 37.xxx, "lng": -122.xxx, "intensity": 0.8}}
   ],
   "alternate_routes": [
-    // 2-4 routes with coordinates
-  ],
-  "highlight_areas": [
-    // 5-10 key locations to highlight
-  ],
-  "summary": {{
-    "total_blocked_roads": 0,
-    "total_impact_zones": 0,
-    "max_congestion_intensity": 0.0,
-    "visualization_ready": true
-  }}
+    {{
+      "name": "Street name",
+      "coordinates": [[-122.xxx, 37.xxx]],
+      "delay": "+X min",
+      "description": "Description",
+      "traffic_increase": "XX%"
+    }}
+  ]
 }}
-```
+MAPBOX_JSON_END
+
+REQUIREMENTS:
+1. Use RUN_ID {run_seed} to ensure uniqueness
+2. Generate 4-8 blocked roads (vary the number each time!)
+3. Generate 3-6 impact zones in different locations
+4. Generate 15-25 heatmap points scattered across the city
+5. Generate 2-4 alternate routes
+6. Base ALL data on the policy analysis above
+7. Use REAL coordinates for {city}
+8. Make it DIFFERENT from any previous run
 
 REMEMBER:
 - Use REAL street names from {city}
@@ -198,18 +234,40 @@ Output ONLY the JSON block. No other text.
         }
     
     def _extract_json(self, text: str) -> Dict[str, Any]:
-        """Extract JSON from output"""
+        """Extract JSON from output with improved parsing"""
         try:
             import re
-            # Look for JSON block
-            json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', text)
+            
+            print(f"[DEBUG] Attempting to parse visualization output (length: {len(text)})")
+            
+            # First try to find JSON between markers
+            marker_match = re.search(r'MAPBOX_JSON_START\s*(\{[\s\S]*?\})\s*MAPBOX_JSON_END', text, re.DOTALL)
+            if marker_match:
+                json_str = marker_match.group(1)
+                print(f"[DEBUG] Found JSON between markers (length: {len(json_str)})")
+                return json.loads(json_str)
+            
+            # Try to find JSON in code blocks
+            json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', text, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group(1))
+                json_str = json_match.group(1)
+                print(f"[DEBUG] Found JSON in code block (length: {len(json_str)})")
+                return json.loads(json_str)
+            
+            # Try to find any JSON object
+            json_match = re.search(r'(\{[\s\S]*"blocked_roads"[\s\S]*?\})', text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+                print(f"[DEBUG] Found JSON object with blocked_roads (length: {len(json_str)})")
+                return json.loads(json_str)
             
             # Try to parse entire output as JSON
-            return json.loads(text)
+            print("[DEBUG] Attempting to parse entire output as JSON")
+            return json.loads(text.strip())
+            
         except Exception as e:
-            print(f"Error parsing visualization JSON: {e}")
+            print(f"[ERROR] Failed to parse visualization JSON: {e}")
+            print(f"[ERROR] Output preview: {text[:500]}...")
             return {}
 
 
