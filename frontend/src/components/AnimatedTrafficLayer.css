@@ -1,0 +1,42 @@
+/* Ensure animated cars render on top of everything */
+.animated-car {
+  z-index: 10000 !important;
+  position: relative !important;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Force car markers to be on top */
+.mapboxgl-marker.animated-car,
+.mapboxgl-marker:has(.animated-car) {
+  z-index: 10000 !important;
+}
+
+/* Regular markers below cars */
+.mapboxgl-marker {
+  z-index: 999;
+}
+
+/* Traffic layer styling */
+#traffic {
+  opacity: 0.85;
+}
+
+/* Add pulsing animation for cars */
+@keyframes car-drive {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.animated-car {
+  animation: car-drive 2s ease-in-out infinite;
+}
+
+/* Make car markers always visible */
+.mapboxgl-marker:has(.animated-car) {
+  opacity: 1 !important;
+  display: block !important;
+}
+
+

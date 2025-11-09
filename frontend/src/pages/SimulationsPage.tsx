@@ -1,14 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Play, Upload, MapPin, Send, Users, Building2, Car, TrendingUp, Zap, Map as MapIcon, X, FileText } from 'lucide-react';
-import { DynamicSimulationMap } from '../components/DynamicSimulationMap';
+import { ArrowLeft, Play, Upload, MapPin, Send, Users, Building2, Car, TrendingUp, Zap, Map as MapIcon, X, FileText, Loader, CheckCircle } from 'lucide-react';
+import { InteractiveMapboxSimulator } from '../components/InteractiveMapboxSimulator';
+import { AgentOutputCard } from '../components/AgentOutputCard';
+import { AnalyticsPanel } from '../components/AnalyticsPanel';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useSimulation } from '../context/SimulationContext';
 import { simulationsService, policyDocsService } from '../services/storage';
+// Using unified context for all data sharing
 
 export function SimulationsPage() {
+  // Use unified context - ALL data shared across features
+  const {
+    currentPolicy,
+    setCurrentPolicy,
+    simulationResults: contextSimResults,
+    setSimulationResults: setContextSimResults,
+    analytics,
+    setAnalytics,
+  } = useSimulation();
+
   const [city, setCity] = useState('San Francisco, CA');
   const [runningSimulation, setRunningSimulation] = useState<string | null>(null);
   const [simulationResults, setSimulationResults] = useState<any>(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [uploadedPolicyDoc, setUploadedPolicyDoc] = useState<File | null>(null);
   
   // Left Modal State
@@ -19,6 +34,23 @@ export function SimulationsPage() {
   const [showAgentStream, setShowAgentStream] = useState(false); // Collapsed by default
   const [showPolicyAnalysis, setShowPolicyAnalysis] = useState(false); // Modal closed by default
   const [showChat, setShowChat] = useState(false); // Chat closed by default
+  
+  // Workflow Widget State
+  const [showWorkflowWidget, setShowWorkflowWidget] = useState(false);
+  const [workflowPolitician, setWorkflowPolitician] = useState('');
+  const [workflowGoal, setWorkflowGoal] = useState('');
+  const [workflowRunning, setWorkflowRunning] = useState(false);
+  const [workflowStep, setWorkflowStep] = useState<number>(0);
+  const [agentMessages, setAgentMessages] = useState<any[]>([]);
+  const [workflowPolicyFile, setWorkflowPolicyFile] = useState<File | null>(null);
+  const [workflowParsedData, setWorkflowParsedData] = useState<any>(null);
+  const [agentFullOutputs, setAgentFullOutputs] = useState<Record<string, string>>({
+    consulting: '',
+    simulation: '',
+    debate: '',
+    aggregator: '',
+    mapbox: ''
+  });
 
   // Chat State
   const [chatMessages, setChatMessages] = useState<any[]>([
@@ -286,6 +318,18 @@ export function SimulationsPage() {
                 )}
               </button>
 
+              {/* Run Workflow Button */}
+              <button
+                onClick={() => setShowWorkflowWidget(!showWorkflowWidget)}
+                className="group relative"
+              >
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl opacity-50 group-hover:opacity-80 blur transition"></div>
+                <div className="relative bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl px-4 py-2 flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-white animate-pulse" />
+                  <span className="text-white font-semibold text-sm">Run Workflow</span>
+                </div>
+              </button>
+
               {/* Create Agents Button */}
               <Link
                 to="/agents"
@@ -315,15 +359,13 @@ export function SimulationsPage() {
         </div>
       </div>
 
-      {/* Mapbox Canvas - Center Background */}
+      {/* Interactive Mapbox with AI-Generated Overlays */}
       <div className="absolute inset-0 z-0">
-        <DynamicSimulationMap
+        <InteractiveMapboxSimulator
           city={city}
-          simulationData={simulationResults}
-          messages={messages}
-          simulationId={runningSimulation}
-          is3D={is3D}
-          onToggle3D={() => setIs3D(!is3D)}
+          aiGeneratedData={simulationResults?.mapbox_data}
+          onRoadBlocked={(road) => console.log('AI blocked road:', road)}
+          onSimulationUpdate={(data) => console.log('AI simulation update:', data)}
         />
       </div>
 
@@ -606,6 +648,457 @@ export function SimulationsPage() {
         </div>
       )}
 
+      {/* Analytics Panel - Shows simulation results */}
+      <AnalyticsPanel
+        simulationResults={simulationResults || contextSimResults}
+        visible={showAnalytics}
+      />
+
+      {/* Workflow Widget Dropdown */}
+      {showWorkflowWidget && (
+        <div className="fixed top-20 right-8 z-50 w-[450px] animate-slideIn">
+          <div className="relative">
+            <div className="absolute -inset-1 bg-gradient-to-r from-cyan-600 via-blue-600 to-purple-600 rounded-3xl blur-xl opacity-75"></div>
+            <div className="relative bg-gray-900/95 backdrop-blur-xl border-2 border-white/30 rounded-3xl shadow-2xl overflow-hidden">
+              {/* Header */}
+              <div className="px-6 py-4 bg-gradient-to-r from-cyan-600/20 to-purple-600/20 border-b border-white/20 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Zap className="w-6 h-6 text-cyan-400 animate-pulse" />
+                  <div>
+                    <h3 className="text-white font-bold text-lg">Multi-Agent Workflow</h3>
+                    <p className="text-white/60 text-xs">Run all 4 agents in sequence</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowWorkflowWidget(false)}
+                  className="text-white/60 hover:text-white transition p-2 hover:bg-white/10 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                {!workflowRunning ? (
+                  <>
+                    {/* REQUIRED: Upload Policy File */}
+                    <div className="bg-orange-900/20 border-2 border-orange-500/50 rounded-xl p-4 mb-4">
+                      <label className="block text-sm font-bold text-orange-400 mb-2 flex items-center gap-2">
+                        <Upload className="w-4 h-4" />
+                        Upload Policy Document (PDF) - REQUIRED *
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          
+                          setWorkflowPolicyFile(file);
+                          
+                          // Parse the PDF
+                          const formData = new FormData();
+                          formData.append('file', file);
+                          
+                          try {
+                            const response = await fetch('http://localhost:3001/api/documents/parse', {
+                              method: 'POST',
+                              body: formData
+                            });
+                            const result = await response.json();
+                            if (result.success) {
+                              setWorkflowParsedData(result.data);
+                              alert(`✅ Policy parsed: ${result.data.page_count} pages`);
+                            }
+                          } catch (error) {
+                            console.error('Parse error:', error);
+                          }
+                        }}
+                        className="w-full px-4 py-3 bg-black/50 border border-orange-500/30 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-orange-500/20 file:text-orange-400 hover:file:bg-orange-500/30 cursor-pointer"
+                      />
+                      {workflowPolicyFile && (
+                        <div className="mt-2 text-sm text-green-400 flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4" />
+                          {workflowPolicyFile.name}
+                          {workflowParsedData && ` (${workflowParsedData.page_count} pages parsed)`}
+                        </div>
+                      )}
+                      {!workflowPolicyFile && (
+                        <div className="mt-2 text-xs text-orange-300">
+                          You must upload a policy document to run the workflow
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-white mb-2">
+                        Politician/Official *
+                      </label>
+                      <input
+                        type="text"
+                        value={workflowPolitician}
+                        onChange={(e) => setWorkflowPolitician(e.target.value)}
+                        className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-cyan-500"
+                        placeholder="e.g., Mayor Johnson"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-white mb-2">
+                        Policy Goal *
+                      </label>
+                      <textarea
+                        value={workflowGoal}
+                        onChange={(e) => setWorkflowGoal(e.target.value)}
+                        className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-cyan-500 resize-none"
+                        rows={3}
+                        placeholder="e.g., Car curfew from 11pm-6am to reduce emissions"
+                      />
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        if (!workflowPolicyFile) {
+                          alert('⚠️ Please upload a policy document first!');
+                          return;
+                        }
+                        if (!workflowPolitician || !workflowGoal) {
+                          alert('Please fill in all fields');
+                          return;
+                        }
+                        setWorkflowRunning(true);
+                        setWorkflowStep(1);
+                        setShowAgentStream(true);
+                        setAgentMessages([]);
+                        
+                        // Add initial message
+                        setAgentMessages([{
+                          data: { agent: 'System', message: `🚀 Starting REAL AI workflow for ${workflowPolitician}: ${workflowGoal}` }
+                        }]);
+
+                        // ACTUALLY CALL THE BACKEND API
+                        try {
+                          // Step 1: Consulting Agent
+                          setWorkflowStep(1);
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'ConsultingAgent', message: '💡 Analyzing political goals and creating strategic framework...' }
+                          }]);
+
+                          const consultingResponse = await fetch('http://localhost:3001/api/agents/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              agent_type: 'CONSULTING',
+                              description: `Analyze goals for ${workflowPolitician}: ${workflowGoal}`,
+                              custom_input: {
+                                politician_info: { name: workflowPolitician, city },
+                                initial_request: workflowGoal
+                              },
+                              stream: false
+                            })
+                          });
+                          const consultingData = await consultingResponse.json();
+                          const consultingOutput = consultingData.analysis || consultingData.result?.analysis || JSON.stringify(consultingData, null, 2);
+                          setAgentFullOutputs(prev => ({ ...prev, consulting: consultingOutput }));
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'ConsultingAgent', message: '✅ Strategic framework complete. Click card to see full analysis.' }
+                          }]);
+
+                          // Step 2: Simulation Agent - THE KEY STEP FOR MAP OVERLAYS
+                          setWorkflowStep(2);
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'SimulationAgent', message: `🔬 Running detailed simulation for ${city}. This will generate map overlays showing blocked roads, impact zones, heatmaps, and alternate routes...` }
+                          }]);
+
+                          const simulationResponse = await fetch('http://localhost:3001/api/agents/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              agent_type: 'SIMULATION',
+                              description: `Simulate impact of: ${workflowGoal} in ${city}`,
+                              custom_input: {
+                                city,
+                                policy_document: workflowGoal,
+                                perspective: 'comprehensive'
+                              },
+                              policy_data: workflowParsedData ? {
+                                document_text: workflowParsedData.full_text,
+                                sections: workflowParsedData.sections,
+                                metrics: workflowParsedData.metrics,
+                                metadata: workflowParsedData.metadata,
+                                page_count: workflowParsedData.page_count
+                              } : null,
+                              stream: false
+                            })
+                          });
+                          const simulationData = await simulationResponse.json();
+                          
+                          // Extract and display simulation results
+                          const simResult = simulationData.result || simulationData;
+                          const simulationOutput = simResult.analysis || JSON.stringify(simResult, null, 2);
+                          setAgentFullOutputs(prev => ({ ...prev, simulation: simulationOutput }));
+                          setAgentMessages(prev => [...prev, {
+                            data: { 
+                              agent: 'SimulationAgent', 
+                              message: `✅ Simulation complete! Analyzed 30 parameters. ${simResult.mapbox_data ? 'Generated map visualizations.' : ''} Click card to see FULL detailed analysis.`,
+                              mapbox_data: simResult.mapbox_data // Pass mapbox data
+                            }
+                          }]);
+
+                          // UPDATE THE MAP WITH REAL AI DATA ONLY
+                          console.log('📊 Simulation result received:', simResult);
+                          console.log('🗺️ AI Mapbox data:', simResult.mapbox_data);
+                          
+                          // NO SAMPLE DATA - AI ONLY
+                          const mapboxDataToUse = simResult.mapbox_data;
+                          
+                          if (mapboxDataToUse) {
+                            const mapDataForDisplay = {
+                              ...simResult,
+                              mapbox_data: mapboxDataToUse,
+                              parameters: simResult.parameters
+                            };
+                            
+                            // Update BOTH local and shared context
+                            setSimulationResults(mapDataForDisplay);
+                            setContextSimResults(mapDataForDisplay);
+                            
+                            // Update analytics
+                            if (simResult.parameters) {
+                              setAnalytics({
+                                totalImpact: simResult.overall_impact_score || 0,
+                                affectedPopulation: simResult.parameters.displacement_risk?.projected || 0,
+                                trafficChange: simResult.parameters.peak_hour_congestion?.change_pct || 0,
+                                economicImpact: simResult.parameters.local_business_revenue?.change || 0,
+                              });
+                              setShowAnalytics(true);
+                            }
+                            
+                            // Also add to messages so DynamicSimulationMap can pick it up
+                            setAgentMessages(prev => [...prev, {
+                              data: { 
+                                agent: 'System', 
+                                message: `✅ AI generated ${mapboxDataToUse.blocked_roads?.length || 0} blocked roads, ${mapboxDataToUse.impact_zones?.length || 0} impact zones, ${mapboxDataToUse.traffic_heatmap?.length || 0} heatmap points! Check map!`,
+                                mapbox_data: mapboxDataToUse
+                              }
+                            }]);
+                            
+                            console.log('✅ REAL AI mapbox data loaded:', mapboxDataToUse);
+                          } else {
+                            setAgentMessages(prev => [...prev, {
+                              data: { agent: 'System', message: '⚠️ AI did not generate mapbox_data. Check Simulation Agent output for JSON blocks.' }
+                            }]);
+                            console.error('❌ NO mapbox_data from AI!');
+                          }
+
+                          // Step 3: Debate Agent
+                          setWorkflowStep(3);
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'DebateAgent', message: '💬 Generating detailed pro/con analysis using simulation data...' }
+                          }]);
+
+                          const debateResponse = await fetch('http://localhost:3001/api/agents/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              agent_type: 'DEBATE',
+                              description: `Debate: ${workflowGoal}`,
+                              custom_input: {
+                                rounds: 3,
+                                focus_areas: ['traffic', 'economy', 'community']
+                              },
+                              stream: false
+                            })
+                          });
+                          const debateData = await debateResponse.json();
+                          const debateOutput = debateData.analysis || debateData.result?.debate_content || JSON.stringify(debateData, null, 2);
+                          setAgentFullOutputs(prev => ({ ...prev, debate: debateOutput }));
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'DebateAgent', message: `✅ Debate complete! Click card to see full pro/con analysis with evidence.` }
+                          }]);
+
+                          // Step 4: Aggregator Agent
+                          setWorkflowStep(4);
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'AggregatorAgent', message: '📄 Compiling final report with all data, recommendations, and next steps...' }
+                          }]);
+
+                          const aggregatorResponse = await fetch('http://localhost:3001/api/agents/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              agent_type: 'AGGREGATOR',
+                              description: `Aggregate report for: ${workflowGoal}`,
+                              stream: false
+                            })
+                          });
+                          const aggregatorData = await aggregatorResponse.json();
+                          const aggregatorOutput = aggregatorData.analysis || aggregatorData.result?.report_content || JSON.stringify(aggregatorData, null, 2);
+                          setAgentFullOutputs(prev => ({ ...prev, aggregator: aggregatorOutput }));
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'AggregatorAgent', message: '✅ Final report ready! Click card to see complete PDF-ready report.' }
+                          }]);
+
+                          // Step 5: MAPBOX VISUALIZATION AGENT - THE KEY VISUAL STEP!
+                          setWorkflowStep(5);
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'MapboxAgent', message: '🗺️ Generating interactive map overlays based on complete analysis... Creating blocked roads, impact zones, heatmaps, and alternate routes!' }
+                          }]);
+
+                          const vizResponse = await fetch('http://localhost:3001/api/agents/execute', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              agent_type: 'MAPBOX_VISUALIZATION',
+                              description: `Create map visualizations for: ${workflowGoal}`,
+                              custom_input: {
+                                city,
+                                policy_goal: workflowGoal
+                              },
+                              stream: false
+                            })
+                          });
+                          const vizData = await vizResponse.json();
+                          const vizResult = vizData.result || vizData;
+                          const visualizationData = vizResult.visualization_data;
+
+                          console.log('🗺️ Visualization Agent output:', visualizationData);
+
+                          if (visualizationData) {
+                            // Save the visualization output
+                            setAgentFullOutputs(prev => ({ ...prev, mapbox: JSON.stringify(visualizationData, null, 2) }));
+
+                            // UPDATE MAP WITH REAL AI-GENERATED OVERLAYS!
+                            setSimulationResults({
+                              ...simulationResults,
+                              mapbox_data: visualizationData
+                            });
+
+                            setAgentMessages(prev => [...prev, {
+                              data: { 
+                                agent: 'MapboxAgent', 
+                                message: `✅ Map overlays generated! Created ${visualizationData.blocked_roads?.length || 0} blocked roads, ${visualizationData.impact_zones?.length || 0} impact zones, ${visualizationData.traffic_heatmap?.length || 0} heatmap points. Toggle controls on right side of map!`,
+                                mapbox_data: visualizationData
+                              }
+                            }]);
+                          }
+
+                          // Completion
+                          setWorkflowRunning(false);
+                          setWorkflowStep(0);
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'System', message: '🎉 COMPLETE! All 5 agents finished. RED roads = blocked, PURPLE = impacts, ORANGE = heatmap, GREEN = alternates. Click agent cards for details!' }
+                          }]);
+
+                        } catch (error) {
+                          console.error('Workflow error:', error);
+                          setAgentMessages(prev => [...prev, {
+                            data: { agent: 'System', message: `❌ Error: ${error.message}. Make sure backend is running on http://localhost:3001` }
+                          }]);
+                          setWorkflowRunning(false);
+                          setWorkflowStep(0);
+                        }
+                      }}
+                      disabled={!workflowPolicyFile || !workflowPolitician || !workflowGoal}
+                      className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition font-bold flex items-center justify-center gap-2"
+                    >
+                      <Play className="w-5 h-5" />
+                      {!workflowPolicyFile ? 'Upload Policy First' : 'Start Workflow'}
+                    </button>
+                  </>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="text-white font-bold text-lg flex items-center gap-2 mb-4">
+                      <Loader className="w-5 h-5 animate-spin" />
+                      Running Workflow...
+                    </div>
+                    
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                      {/* Consulting Agent Card */}
+                      <AgentOutputCard
+                        agentName="Consulting Agent"
+                        agentIcon="💡"
+                        agentColor="from-cyan-600 to-blue-600"
+                        status={
+                          workflowStep > 1 ? 'completed' : 
+                          workflowStep === 1 ? 'running' : 
+                          'pending'
+                        }
+                        output={agentFullOutputs.consulting || 'Click "Start Workflow" to begin...'}
+                        stepNumber={1}
+                      />
+                      
+                      {/* Simulation Agent Card */}
+                      <AgentOutputCard
+                        agentName="Simulation Agent"
+                        agentIcon="🔬"
+                        agentColor="from-green-600 to-emerald-600"
+                        status={
+                          workflowStep > 2 ? 'completed' : 
+                          workflowStep === 2 ? 'running' : 
+                          'pending'
+                        }
+                        output={agentFullOutputs.simulation || 'Waiting for consulting agent...'}
+                        result={simulationResults}
+                        stepNumber={2}
+                      />
+                      
+                      {/* Debate Agent Card */}
+                      <AgentOutputCard
+                        agentName="Debate Agent"
+                        agentIcon="💬"
+                        agentColor="from-orange-600 to-red-600"
+                        status={
+                          workflowStep > 3 ? 'completed' : 
+                          workflowStep === 3 ? 'running' : 
+                          'pending'
+                        }
+                        output={agentFullOutputs.debate || 'Waiting for simulation agent...'}
+                        stepNumber={3}
+                      />
+                      
+                      {/* Aggregator Agent Card */}
+                      <AgentOutputCard
+                        agentName="Aggregator Agent"
+                        agentIcon="📄"
+                        agentColor="from-purple-600 to-pink-600"
+                        status={
+                          workflowStep > 4 ? 'completed' : 
+                          workflowStep === 4 ? 'running' : 
+                          'pending'
+                        }
+                        output={agentFullOutputs.aggregator || 'Waiting for debate agent...'}
+                        stepNumber={4}
+                      />
+
+                      {/* Mapbox Visualization Agent Card - NEW! */}
+                      <AgentOutputCard
+                        agentName="Mapbox Visualization"
+                        agentIcon="🗺️"
+                        agentColor="from-red-600 to-orange-600"
+                        status={
+                          workflowStep >= 5 ? 'completed' : 
+                          workflowStep === 5 ? 'running' : 
+                          'pending'
+                        }
+                        output={agentFullOutputs.mapbox || 'Waiting for aggregator agent...'}
+                        result={simulationResults?.mapbox_data}
+                        stepNumber={5}
+                      />
+                    </div>
+
+                    <div className="text-cyan-400 text-sm text-center pt-4 flex items-center justify-center gap-2">
+                      <span>💡</span>
+                      <span>Click any agent card to see full output</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Agent Stream Popup - Center Bottom (Cluely Style) - Always Visible */}
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
           <div className="relative">
@@ -624,15 +1117,15 @@ export function SimulationsPage() {
                   <h4 className="text-white font-bold text-sm">🤖 Agentic Thoughts Stream</h4>
                 </div>
                 <div className="text-white/60 text-xs">
-                  {displayMessages.length > 0 ? `${displayMessages.length} messages` : 'Waiting for agents...'}
+                  {(agentMessages.length > 0 ? agentMessages : displayMessages).length} messages
                 </div>
               </div>
 
               {/* Messages */}
               {showAgentStream && (
                 <div className="overflow-y-auto space-y-1 font-mono text-xs max-h-[240px]">
-                  {displayMessages.length > 0 ? (
-                    displayMessages.slice(-20).map((msg, i) => {
+                  {(agentMessages.length > 0 ? agentMessages : displayMessages).length > 0 ? (
+                    (agentMessages.length > 0 ? agentMessages : displayMessages).slice(-20).map((msg, i) => {
                       const agentName = msg.data.agent || 'System';
                       const message = msg.data.message || msg.data.token || 'Processing...';
                       return (
@@ -654,6 +1147,22 @@ export function SimulationsPage() {
             </div>
           </div>
         </div>
+
+      <style>{`
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-slideIn {
+          animation: slideIn 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }

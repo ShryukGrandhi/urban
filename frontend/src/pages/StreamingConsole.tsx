@@ -1,10 +1,116 @@
 import { useWebSocket } from '../hooks/useWebSocket';
-import { Terminal } from 'lucide-react';
+import { Terminal, ArrowLeft, Phone } from 'lucide-react';
 import { VerticalSidebar } from '../components/VerticalSidebar';
-import { format } from 'date-fns';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import MakeCallModal from '../components/MakeCallModal';
 
 export function StreamingConsole() {
   const { messages, isConnected, clearMessages } = useWebSocket();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [agentInfo, setAgentInfo] = useState<any>(null);
+  const [showCallModal, setShowCallModal] = useState(false);
+  const [fullOutput, setFullOutput] = useState<string>('');
+
+  useEffect(() => {
+    // Get agent info from navigation state
+    if (location.state) {
+      setAgentInfo(location.state);
+    }
+  }, [location.state]);
+
+  useEffect(() => {
+    // Collect all message data into full output
+    const output = messages
+      .filter(msg => msg.type === 'stream')
+      .map(msg => msg.data)
+      .join('');
+    setFullOutput(output);
+  }, [messages]);
+
+  useEffect(() => {
+    // Auto-trigger call when Media Calling agent completes
+    const completionMsg = messages.find(msg => 
+      msg.type === 'complete' && 
+      msg.agent_type === 'MEDIA_CALLING'
+    );
+    
+    if (completionMsg && fullOutput && agentInfo?.agentName) {
+      // Check if we already auto-called
+      const alreadyCalled = messages.some(msg => 
+        msg.type === 'progress' && 
+        msg.data && 
+        msg.data.includes('AUTO-CALLING')
+      );
+      
+      if (!alreadyCalled) {
+        // Auto-trigger the call after a brief delay
+        const timer = setTimeout(() => {
+          console.log('🔥 Auto-triggering phone call for Media Calling agent...');
+          handleAutoCall();
+        }, 2000);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [messages, fullOutput, agentInfo]);
+
+  const handleAutoCall = async () => {
+    if (!fullOutput) return;
+    
+    try {
+      // Extract key message from output
+      let message = fullOutput;
+      if (message.includes('PHONE CALL SUMMARY')) {
+        const parts = message.split('PHONE CALL SUMMARY');
+        if (parts.length > 1) {
+          const summary = parts[1].split('\n\n')[0];
+          message = summary.trim();
+        }
+      }
+      
+      // Limit message length
+      if (message.length > 500) {
+        message = message.substring(0, 500) + '...';
+      }
+
+      console.log('📞 Making automatic call...');
+      
+      const response = await fetch('http://localhost:8000/api/calls/make', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone_number: '+18582108648',
+          message: message,
+          agent_name: agentInfo?.agentName || 'Policy Agent',
+          call_type: 'media_outreach',
+          policy_name: 'Urban Development Initiative'
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('✅ Call initiated!', result);
+        // Show success notification in console
+        alert(`📞 CALL INITIATED!\n\nYour phone is ringing from +1 (858) 251-5889!\n\nCall ID: ${result.call_id}`);
+      } else {
+        console.error('Call failed:', result);
+      }
+    } catch (error) {
+      console.error('Error making auto-call:', error);
+    }
+  };
+
+  const formatTimestamp = (timestamp: string | number) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString('en-US', { hour12: false });
+    } catch {
+      return '--:--:--';
+    }
+  };
 
   return (
     <div className="relative min-h-screen bg-[#0a0a0a] flex flex-col">
@@ -29,12 +135,19 @@ export function StreamingConsole() {
         <div className="max-w-[1600px] mx-auto px-16 py-8">
           <div className="flex items-center justify-between">
             <div>
+              <button
+                onClick={() => navigate('/agents')}
+                className="flex items-center gap-2 text-white/70 hover:text-white transition-colors mb-3"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Agents
+              </button>
               <h1 className="text-4xl font-bold text-white tracking-tight uppercase flex items-center gap-3">
                 <Terminal className="w-10 h-10" />
-                Live Console
+                {agentInfo?.agentName ? `${agentInfo.agentName} - Live Output` : 'Live Console'}
               </h1>
               <p className="text-white/80 mt-2 text-lg tracking-wide">
-                Real-time streaming from all active AI agents
+                {agentInfo?.taskId ? `Execution ID: ${agentInfo.taskId}` : 'Real-time streaming from all active AI agents'}
               </p>
             </div>
             <div className="flex items-center gap-6">
@@ -48,6 +161,21 @@ export function StreamingConsole() {
                   {isConnected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
+              
+              {/* Make Real Call Button */}
+              {fullOutput && (
+                <button
+                  onClick={() => setShowCallModal(true)}
+                  className="group relative"
+                >
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl opacity-50 group-hover:opacity-100 blur transition duration-300"></div>
+                  <div className="relative px-6 py-3 bg-black border border-green-500/30 rounded-xl hover:border-green-500/60 transition-all flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-green-400" />
+                    <span className="text-white font-semibold">Make Real Call</span>
+                  </div>
+                </button>
+              )}
+              
               <button
                 onClick={clearMessages}
                 className="group relative"
@@ -65,15 +193,16 @@ export function StreamingConsole() {
       {/* Console Output */}
       <div className="flex-1 overflow-auto p-8 space-y-1 max-w-[1600px] mx-auto w-full">
         {messages.map((msg, i) => (
-          <div key={i} className="text-sm">
+          <div key={i} className="text-sm font-mono bg-gray-900/50 p-3 rounded border border-cyan-500/20">
             <span className="text-gray-500">
-              [{format(new Date(msg.timestamp), 'HH:mm:ss')}]
+              [{formatTimestamp(msg.timestamp)}]
             </span>
             {' '}
             <span className={`font-semibold ${
               msg.type === 'error' ? 'text-red-400' :
               msg.type === 'progress' ? 'text-blue-400' :
               msg.type === 'complete' ? 'text-green-400' :
+              msg.type === 'stream' ? 'text-cyan-400' :
               'text-yellow-400'
             }`}>
               [{msg.type.toUpperCase()}]
@@ -83,19 +212,22 @@ export function StreamingConsole() {
               <span className="text-purple-400">[{msg.channel}]</span>
             )}
             {' '}
-            <span className="text-green-400">
-              {JSON.stringify(msg.data)}
-            </span>
+            <div className="text-white mt-2 whitespace-pre-wrap">
+              {typeof msg.data === 'string' ? msg.data : JSON.stringify(msg.data, null, 2)}
+            </div>
           </div>
         ))}
 
         {messages.length === 0 && (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
-              <Terminal className="w-12 h-12 mx-auto mb-4" />
-              <p>Waiting for agent activity...</p>
+              <div className="w-16 h-16 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-xl font-semibold">Waiting for agent output...</p>
               <p className="text-sm mt-2">
-                Start a simulation, debate, or report to see live output
+                {agentInfo?.agentName || 'Agent'} is processing your request
+              </p>
+              <p className="text-xs mt-2 text-gray-600">
+                This may take a few moments. Results will stream here in real-time.
               </p>
             </div>
           </div>
@@ -110,6 +242,13 @@ export function StreamingConsole() {
         </div>
       </div>
       </div>
+
+      {/* Make Call Modal */}
+      <MakeCallModal
+        isOpen={showCallModal}
+        onClose={() => setShowCallModal(false)}
+        agentOutput={fullOutput}
+      />
     </div>
   );
 }

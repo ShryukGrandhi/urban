@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Plus, Zap } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Plus, Zap, Play } from 'lucide-react';
 import { CreateAgentModal } from '../components/CreateAgentModal';
+import ExecuteAgentModal from '../components/ExecuteAgentModal';
 import { agentsService } from '../services/storage';
 
 export function AgentsDashboard() {
   const [agents, setAgents] = useState<any[]>([]);
   const [showAgentModal, setShowAgentModal] = useState(false);
+  const [showExecuteModal, setShowExecuteModal] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   // Load agents on mount
   useEffect(() => {
@@ -33,6 +37,42 @@ export function AgentsDashboard() {
     } catch (error) {
       console.error('Error creating agent:', error);
       alert('Failed to create agent');
+    }
+  };
+
+  const handleExecuteAgent = (agent: any) => {
+    setSelectedAgent(agent);
+    setShowExecuteModal(true);
+  };
+
+  const handleExecute = async (executionData: any) => {
+    if (!selectedAgent) return;
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/agents/${selectedAgent.id}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(executionData)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Execution started:', result);
+        
+        // Navigate to streaming console to see results
+        navigate('/streaming-console', { 
+          state: { 
+            agentId: result.agent_id,
+            taskId: result.task_id,
+            agentName: selectedAgent.name 
+          } 
+        });
+      } else {
+        alert('Failed to execute agent');
+      }
+    } catch (error) {
+      console.error('Error executing agent:', error);
+      alert('Failed to execute agent - make sure backend is running');
     }
   };
 
@@ -164,15 +204,24 @@ export function AgentsDashboard() {
                       </span>
                     </div>
                     <h3 className="text-2xl font-bold text-white mb-2">{agent.name}</h3>
-                    <p className="text-white/60 mb-4">{agent.role}</p>
-                    <div className="flex items-center gap-3">
+                    <p className="text-white/60 mb-4 min-h-[3rem]">{agent.role}</p>
+                    <div className="flex items-center gap-3 mb-4">
                       <span className="px-4 py-2 bg-white/10 text-white/80 rounded-full text-sm font-medium">
                         {agent.type}
                       </span>
                       <span className="text-white/50 text-sm">
-                        {agent._count?.simulations || 0} runs
+                        {agent._count?.executions || 0} runs
                       </span>
                     </div>
+                    
+                    {/* Execute Button */}
+                    <button
+                      onClick={() => handleExecuteAgent(agent)}
+                      className="w-full mt-4 px-4 py-3 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/40 hover:to-blue-500/40 border border-cyan-500/50 text-cyan-300 font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                    >
+                      <Play className="w-4 h-4" />
+                      Execute Agent
+                    </button>
                   </div>
                 </div>
               ))}
@@ -186,6 +235,19 @@ export function AgentsDashboard() {
         <CreateAgentModal
           onClose={() => setShowAgentModal(false)}
           onSuccess={handleCreateAgent}
+        />
+      )}
+
+      {/* Execute Agent Modal */}
+      {showExecuteModal && selectedAgent && (
+        <ExecuteAgentModal
+          isOpen={showExecuteModal}
+          onClose={() => {
+            setShowExecuteModal(false);
+            setSelectedAgent(null);
+          }}
+          agent={selectedAgent}
+          onExecute={handleExecute}
         />
       )}
     </div>

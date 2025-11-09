@@ -156,6 +156,17 @@ export function HomePage() {
 
           <div className="flex gap-6 justify-center">
             <Link
+              to="/workflow"
+              className="group relative"
+            >
+              <div className="absolute -inset-1 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-2xl blur-lg opacity-75 group-hover:opacity-100 transition animate-pulse"></div>
+              <div className="relative bg-gradient-to-r from-cyan-600 to-blue-600 px-12 py-5 rounded-2xl font-bold text-xl text-white flex items-center gap-3 shadow-2xl">
+                <Zap className="w-6 h-6 animate-pulse" />
+                Run Workflow
+              </div>
+            </Link>
+
+            <Link
               to="/simulations"
               className="group relative"
             >
@@ -174,6 +185,17 @@ export function HomePage() {
               <div className="relative bg-black border-2 border-white/30 px-12 py-5 rounded-2xl font-bold text-xl text-white flex items-center gap-3 hover:border-white/60 transition">
                 <Zap className="w-6 h-6" />
                 Create Agents
+              </div>
+            </Link>
+
+            <Link
+              to="/interactive-map"
+              className="group relative"
+            >
+              <div className="absolute -inset-1 bg-gradient-to-r from-orange-600 to-red-600 rounded-2xl blur-lg opacity-75 group-hover:opacity-100 transition"></div>
+              <div className="relative bg-gradient-to-r from-orange-600 to-red-600 px-12 py-5 rounded-2xl font-bold text-xl text-white flex items-center gap-3">
+                <MapPin className="w-6 h-6" />
+                Interactive Map
               </div>
             </Link>
           </div>

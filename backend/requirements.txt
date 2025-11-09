@@ -1,0 +1,26 @@
+# URBAN Multi-Agent Backend Requirements
+
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+websockets==12.0
+
+# Data validation
+pydantic==2.5.3
+
+# Google Gemini AI
+google-generativeai==0.3.2
+
+# Environment variables - REQUIRED for API key loading
+python-dotenv==1.0.0
+
+# Logging
+python-json-logger==2.0.7
+
+# Optional: For enhanced features
+# requests==2.31.0  # If making external API calls
+# aiohttp==3.9.1    # For async HTTP requests
+# redis==5.0.1      # For caching (future)
+# celery==5.3.4     # For background tasks (future)
+

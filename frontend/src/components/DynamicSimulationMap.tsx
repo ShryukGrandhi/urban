@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { Activity, Layers } from 'lucide-react';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { useAIGeneratedMapOverlays } from './AIGeneratedMapOverlays';
+// AnimatedTrafficLayer disabled for performance
+// import './AnimatedTrafficLayer.css';
+// import { useAnimatedTrafficLayer } from './AnimatedTrafficLayer';
 
 const MAPBOX_TOKEN = 'pk.eyJ1Ijoic3RldmVkdXN0eSIsImEiOiJjbWd4am05Z2IxZXhyMmtwdTg1cnU4cmYxIn0.zpfFRf-6xH6ivorwg_ZJ3w';
 
@@ -26,7 +30,39 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [heatmapStyle, setHeatmapStyle] = useState<'concentric' | 'radius'>('concentric');
   const [buildingOpacity, setBuildingOpacity] = useState(1);
+  const [showCars, setShowCars] = useState(false); // Disabled for performance
   const demolitionIntervalRef = useRef<any>(null);
+  const [aiOverlayLayers, setAiOverlayLayers] = useState<string[]>([]);
+
+  // AI-Generated Map Overlays from simulation data
+  const mapboxData = simulationData?.mapbox_data || 
+                     messages.find((m: any) => m.data?.mapbox_data)?.data?.mapbox_data || 
+                     messages.find((m: any) => m.mapbox_data)?.mapbox_data;
+  
+  console.log('🗺️ DynamicSimulationMap: Checking for mapbox_data...', {
+    hasSimulationData: !!simulationData,
+    hasMapboxData: !!mapboxData,
+    simulationDataKeys: simulationData ? Object.keys(simulationData) : [],
+    messageCount: messages.length,
+  });
+
+  const { overlayLayers, enabledLayers, toggleLayer } = useAIGeneratedMapOverlays({
+    map: map.current,
+    mapboxData: mapboxData,
+    simulationData,
+    onLayersReady: (layers) => {
+      console.log('✅ AI Overlay layers ready:', layers);
+      setAiOverlayLayers(layers);
+    },
+  });
+
+  // Animated traffic layer disabled for performance
+  // const { carCount } = useAnimatedTrafficLayer({
+  //   map: map.current,
+  //   trafficData: simulationData,
+  //   showCars: showCars && mapLoaded,
+  //   congestionLevel: 0.5
+  // });
 
   // Initialize map
   useEffect(() => {
@@ -38,11 +74,14 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/dark-v11',  // DARK - Full control over buildings!
       center: [-122.4194, 37.7749],
-      zoom: 15,
-      pitch: 70,
-      bearing: -17,
+      zoom: 12.5,
+      pitch: 0, // Start flat to see cars better
+      bearing: 0,
       antialias: true,
     });
+    
+    // Reduce scroll zoom sensitivity
+    map.current.scrollZoom.setWheelZoomRate(1/200); // Much slower zoom
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
     map.current.addControl(new mapboxgl.FullscreenControl(), 'top-right');
@@ -145,8 +184,8 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
         const el = document.createElement('div');
         el.innerHTML = `
           <div class="relative group cursor-pointer">
-            <div class="absolute -inset-2 bg-green-500 rounded-full blur-xl opacity-60 animate-pulse"></div>
-            <div class="relative w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-xl flex items-center justify-center shadow-2xl text-2xl animate-bounce">
+            <div class="absolute -inset-2 bg-green-500 rounded-full blur-xl opacity-40"></div>
+            <div class="relative w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-xl flex items-center justify-center shadow-2xl text-2xl">
               🏗️
             </div>
           </div>
@@ -187,7 +226,7 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
         const el = document.createElement('div');
         el.innerHTML = `
           <div class="relative">
-            <div class="absolute -inset-2 bg-red-500 rounded-full blur-xl opacity-60 animate-pulse"></div>
+            <div class="absolute -inset-2 bg-red-500 rounded-full blur-xl opacity-40"></div>
             <div class="relative w-12 h-12 bg-gradient-to-br from-red-400 to-orange-500 rounded-xl flex items-center justify-center shadow-2xl text-2xl">
               💥
             </div>
@@ -487,7 +526,7 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
       const makerEl = document.createElement('div');
       makerEl.innerHTML = `
         <div class="relative group">
-          <div class="absolute -inset-2 bg-purple-500 rounded-2xl blur-xl opacity-60 animate-pulse"></div>
+          <div class="absolute -inset-2 bg-purple-500 rounded-2xl blur-xl opacity-40"></div>
           <div class="relative bg-black/90 backdrop-blur-xl border-2 border-purple-400/50 rounded-2xl px-6 py-3 shadow-2xl">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center text-xl">
@@ -567,8 +606,8 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
     const demolitionEl = document.createElement('div');
     demolitionEl.innerHTML = `
       <div class="relative">
-        <div class="absolute -inset-4 bg-red-500 rounded-full blur-2xl opacity-60 animate-pulse"></div>
-        <div class="relative w-20 h-20 bg-gradient-to-br from-red-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-2xl text-4xl animate-bounce">
+        <div class="absolute -inset-4 bg-red-500 rounded-full blur-2xl opacity-40"></div>
+        <div class="relative w-20 h-20 bg-gradient-to-br from-red-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-2xl text-4xl">
           💥
         </div>
       </div>
@@ -661,7 +700,7 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
         progressBar.style.width = `${progress}%`;
       }
 
-    }, 500); // Update every 500ms for smooth animation
+    }, 1000); // Update every 1000ms for better performance
   };
 
   if (!MAPBOX_TOKEN) {
@@ -681,6 +720,41 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
       
       {/* COMPACT CONTROLS - Top Right */}
       <div className="absolute top-6 right-6 z-20 flex gap-3">
+        
+        {/* AI-Generated Overlay Controls - ALWAYS SHOW */}
+        <div className="bg-black/90 backdrop-blur-xl border border-cyan-500/30 rounded-xl p-3 mb-3">
+          <h4 className="text-white text-sm font-semibold mb-2 flex items-center gap-2">
+            <Layers className="w-4 h-4 text-cyan-400" />
+            AI Overlays {aiOverlayLayers.length > 0 && `(${aiOverlayLayers.length})`}
+          </h4>
+          <div className="space-y-1">
+            {[
+              { id: 'blocked-roads', label: '🚫 Blocked Roads', color: 'red' },
+              { id: 'impact-zones', label: '⚠️ Impact Zones', color: 'purple' },
+              { id: 'heatmap', label: '🔥 Traffic Heatmap', color: 'orange' },
+              { id: 'alternate-routes', label: '🛣️ Alternates', color: 'green' },
+            ].map(overlay => (
+              <button
+                key={overlay.id}
+                onClick={() => toggleLayer(overlay.id)}
+                className={`w-full px-2 py-1 rounded text-xs text-left transition-all ${
+                  enabledLayers[overlay.id]
+                    ? 'bg-cyan-600/40 text-cyan-200 border border-cyan-500/60 font-semibold'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                {overlay.label} {enabledLayers[overlay.id] ? '✓' : ''}
+              </button>
+            ))}
+          </div>
+          {aiOverlayLayers.length === 0 && (
+            <div className="text-xs text-gray-500 mt-2 text-center">
+              Run workflow to generate overlays
+            </div>
+          )}
+        </div>
+
+        {/* Animated cars removed for performance */}
         {/* 3D/2D Toggle - Compact */}
         <button
           onClick={toggle3D}
@@ -729,7 +803,7 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
           className="group relative"
           title="Demolish Salesforce Tower"
         >
-          <div className="absolute -inset-0.5 bg-gradient-to-r from-red-600 to-orange-600 rounded-xl blur-lg opacity-75 group-hover:opacity-100 transition animate-pulse"></div>
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-red-600 to-orange-600 rounded-xl blur-lg opacity-60 group-hover:opacity-100 transition"></div>
           <div className="relative bg-black/90 backdrop-blur-2xl border border-white/30 rounded-xl px-4 py-3 hover:scale-105 transition-transform shadow-xl">
             <div className="text-2xl">💥</div>
           </div>
@@ -774,7 +848,7 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
           className="group relative"
           title="TEST: Make ALL buildings disappear"
         >
-          <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-xl blur-lg opacity-75 group-hover:opacity-100 transition animate-pulse"></div>
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-xl blur-lg opacity-60 group-hover:opacity-100 transition"></div>
           <div className="relative bg-black/90 backdrop-blur-2xl border border-white/30 rounded-xl px-4 py-3 hover:scale-105 transition-transform shadow-xl">
             <div className="text-2xl">🎬</div>
           </div>

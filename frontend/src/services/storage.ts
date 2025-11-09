@@ -37,7 +37,23 @@ export const agentsService = {
 
   // Create agent
   create: async (data: any): Promise<any> => {
-    // TODO: When backend is ready, replace with: return agentsApi.create(data).then(res => res.data);
+    // Save to backend for execution
+    try {
+      const response = await fetch('http://localhost:8000/api/agents/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (response.ok) {
+        const agentData = await response.json();
+        agentsStorage.push(agentData);
+        return agentData;
+      }
+    } catch (e) {
+      console.warn('Backend not available, using local storage');
+    }
+    
+    // Fallback to local storage
     const newAgent = {
       id: 'agent-' + Date.now(),
       ...data,

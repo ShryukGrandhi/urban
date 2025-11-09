@@ -11,10 +11,11 @@ export function useWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<WebSocketMessage[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
+  const clientIdRef = useRef<string>(`client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
 
   useEffect(() => {
-    // Use native WebSocket instead of socket.io
-    const socket = new WebSocket('ws://localhost:3001/ws');
+    // Connect to WebSocket on port 8000 with client ID
+    const socket = new WebSocket(`ws://localhost:8000/ws/${clientIdRef.current}`);
 
     socket.onopen = () => {
       console.log('WebSocket connected');
