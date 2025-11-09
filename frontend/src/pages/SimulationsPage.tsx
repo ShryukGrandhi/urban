@@ -940,20 +940,29 @@ export function SimulationsPage() {
                           }]);
 
                           // Step 5: MAPBOX VISUALIZATION AGENT - THE KEY VISUAL STEP!
+                          // Generate UNIQUE run ID to ensure different visualizations each time
+                          const uniqueRunId = `viz-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                          console.log(`🆔 UNIQUE RUN ID: ${uniqueRunId}`);
+                          
                           setWorkflowStep(5);
                           setAgentMessages(prev => [...prev, {
-                            data: { agent: 'MapboxAgent', message: '🗺️ Generating interactive map overlays based on complete analysis... Creating blocked roads, impact zones, heatmaps, and alternate routes!' }
+                            data: { agent: 'MapboxAgent', message: `🗺️ Generating UNIQUE interactive map overlays (Run: ${uniqueRunId})... Creating blocked roads, impact zones, heatmaps, and alternate routes!` }
                           }]);
+
+                          // Clear previous simulation results to force refresh
+                          setSimulationResults(null);
 
                           const vizResponse = await fetch('http://localhost:3001/api/agents/execute', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                               agent_type: 'MAPBOX_VISUALIZATION',
-                              description: `Create map visualizations for: ${workflowGoal}`,
+                              description: `Create UNIQUE map visualizations for: ${workflowGoal} (Run ID: ${uniqueRunId})`,
                               custom_input: {
                                 city,
-                                policy_goal: workflowGoal
+                                policy_goal: workflowGoal,
+                                run_id: uniqueRunId, // Pass unique ID to backend
+                                force_unique: true // Flag to ensure variation
                               },
                               stream: false
                             })
@@ -963,24 +972,40 @@ export function SimulationsPage() {
                           const visualizationData = vizResult.visualization_data;
 
                           console.log('🗺️ Visualization Agent output:', visualizationData);
+                          console.log('🆔 Run ID in data:', visualizationData?.run_id);
+                          console.log('📊 Blocked roads:', visualizationData?.blocked_roads?.length);
+                          console.log('⚠️ Impact zones:', visualizationData?.impact_zones?.length);
+                          console.log('🔥 Heatmap points:', visualizationData?.traffic_heatmap?.length);
 
                           if (visualizationData) {
-                            // Save the visualization output
+                            // Save the visualization output with run ID
                             setAgentFullOutputs(prev => ({ ...prev, mapbox: JSON.stringify(visualizationData, null, 2) }));
 
-                            // UPDATE MAP WITH REAL AI-GENERATED OVERLAYS!
-                            setSimulationResults({
+                            // UPDATE MAP WITH UNIQUE AI-GENERATED OVERLAYS!
+                            const newSimResults = {
                               ...simulationResults,
-                              mapbox_data: visualizationData
-                            });
+                              mapbox_data: visualizationData,
+                              run_id: uniqueRunId,
+                              generated_at: new Date().toISOString()
+                            };
+                            
+                            setSimulationResults(newSimResults);
+                            setContextSimResults(newSimResults); // Update shared context too!
 
                             setAgentMessages(prev => [...prev, {
                               data: { 
                                 agent: 'MapboxAgent', 
-                                message: `✅ Map overlays generated! Created ${visualizationData.blocked_roads?.length || 0} blocked roads, ${visualizationData.impact_zones?.length || 0} impact zones, ${visualizationData.traffic_heatmap?.length || 0} heatmap points. Toggle controls on right side of map!`,
-                                mapbox_data: visualizationData
+                                message: `✅ UNIQUE overlays generated! (Run: ${uniqueRunId})\n` +
+                                  `🚫 ${visualizationData.blocked_roads?.length || 0} blocked roads\n` +
+                                  `⚠️ ${visualizationData.impact_zones?.length || 0} impact zones\n` +
+                                  `🔥 ${visualizationData.traffic_heatmap?.length || 0} heatmap points\n` +
+                                  `🛣️ ${visualizationData.alternate_routes?.length || 0} alternate routes`,
+                                mapbox_data: visualizationData,
+                                run_id: uniqueRunId
                               }
                             }]);
+                          } else {
+                            console.error('❌ No visualization data generated!');
                           }
 
                           // Completion
